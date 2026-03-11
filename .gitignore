@@ -1,0 +1,14 @@
+# Data & weights
+*.pth
+dataset_all/
+OneDrive_*.zip
+
+# OS
+.DS_Store
+__pycache__/
+*.pyc
+
+# Report build artifacts
+*.aux
+*.log
+*.out
