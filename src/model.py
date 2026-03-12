@@ -60,11 +60,14 @@ class BaselineCNN(nn.Module):
             nn.Sigmoid(),
         )
 
-        # Classification head
+        # Classification head (deeper for better gesture discrimination)
         self.cls_head = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
-            nn.Linear(512, 128),
+            nn.Linear(512, 256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.4),
+            nn.Linear(256, 128),
             nn.ReLU(inplace=True),
             nn.Dropout(0.3),
             nn.Linear(128, num_classes),
@@ -74,6 +77,9 @@ class BaselineCNN(nn.Module):
     def _block(in_c: int, out_c: int) -> nn.Sequential:
         return nn.Sequential(
             nn.Conv2d(in_c, out_c, 3, padding=1),
+            nn.BatchNorm2d(out_c),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_c, out_c, 3, padding=1),
             nn.BatchNorm2d(out_c),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(2),

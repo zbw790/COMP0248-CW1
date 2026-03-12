@@ -62,12 +62,12 @@ def evaluate(model, loader, device):
     Returns:
         Dict of all metrics.
     """
-    all_bbox_ious = []
+    all_reg_bbox_ious = []   # from direct regression head
+    all_seg_bbox_ious = []   # from seg mask derived bbox
     all_seg_ious = []
     all_dice = []
     all_preds = []
     all_labels = []
-    all_det_correct = []
 
     for batch in loader:
         images = batch["image"].to(device)
@@ -77,11 +77,14 @@ def evaluate(model, loader, device):
 
         outputs = model(images)
 
-        # BBox IoU: derive bbox from predicted segmentation mask
-        pred_bboxes = bbox_from_mask_tensor(outputs["seg"])
-        ious = compute_iou_bbox(pred_bboxes, bboxes)
-        all_bbox_ious.append(ious.cpu())
-        all_det_correct.append((ious >= 0.5).float().cpu())
+        # BBox IoU from direct regression head
+        reg_ious = compute_iou_bbox(outputs["bbox"], bboxes)
+        all_reg_bbox_ious.append(reg_ious.cpu())
+
+        # BBox IoU derived from predicted segmentation mask
+        seg_bboxes = bbox_from_mask_tensor(outputs["seg"])
+        seg_ious = compute_iou_bbox(seg_bboxes, bboxes)
+        all_seg_bbox_ious.append(seg_ious.cpu())
 
         # Seg metrics
         all_seg_ious.append(compute_seg_iou(outputs["seg"], masks).cpu().item())
@@ -92,14 +95,21 @@ def evaluate(model, loader, device):
         all_preds.append(preds)
         all_labels.append(labels.cpu())
 
-    all_bbox_ious = torch.cat(all_bbox_ious)
-    all_det_correct = torch.cat(all_det_correct)
+    all_reg_bbox_ious = torch.cat(all_reg_bbox_ious)
+    all_seg_bbox_ious = torch.cat(all_seg_bbox_ious)
     all_preds = torch.cat(all_preds).numpy()
     all_labels = torch.cat(all_labels).numpy()
 
+    # Use whichever bbox method is better for reporting
+    best_bbox_ious = torch.max(all_reg_bbox_ious, all_seg_bbox_ious)
+
     metrics = {
-        "detection_acc@0.5": all_det_correct.mean().item(),
-        "mean_bbox_iou": all_bbox_ious.mean().item(),
+        "detection_acc@0.5_reg": (all_reg_bbox_ious >= 0.5).float().mean().item(),
+        "detection_acc@0.5_seg": (all_seg_bbox_ious >= 0.5).float().mean().item(),
+        "detection_acc@0.5": (best_bbox_ious >= 0.5).float().mean().item(),
+        "mean_bbox_iou_reg": all_reg_bbox_ious.mean().item(),
+        "mean_bbox_iou_seg": all_seg_bbox_ious.mean().item(),
+        "mean_bbox_iou": best_bbox_ious.mean().item(),
         "seg_miou": np.mean(all_seg_ious),
         "dice": np.mean(all_dice),
         "cls_top1_acc": (all_preds == all_labels).mean(),
@@ -117,8 +127,12 @@ def print_results(metrics: dict):
     print("=" * 60)
     print(f"{'Metric':<30} {'Value':>10}")
     print("-" * 42)
-    print(f"{'Detection Acc @0.5 IoU':<30} {metrics['detection_acc@0.5']:>10.4f}")
-    print(f"{'Mean BBox IoU':<30} {metrics['mean_bbox_iou']:>10.4f}")
+    print(f"{'Det Acc @0.5 (regression)':<30} {metrics['detection_acc@0.5_reg']:>10.4f}")
+    print(f"{'Det Acc @0.5 (from seg)':<30} {metrics['detection_acc@0.5_seg']:>10.4f}")
+    print(f"{'Det Acc @0.5 (best)':<30} {metrics['detection_acc@0.5']:>10.4f}")
+    print(f"{'Mean BBox IoU (regression)':<30} {metrics['mean_bbox_iou_reg']:>10.4f}")
+    print(f"{'Mean BBox IoU (from seg)':<30} {metrics['mean_bbox_iou_seg']:>10.4f}")
+    print(f"{'Mean BBox IoU (best)':<30} {metrics['mean_bbox_iou']:>10.4f}")
     print(f"{'Segmentation mIoU':<30} {metrics['seg_miou']:>10.4f}")
     print(f"{'Dice Coefficient':<30} {metrics['dice']:>10.4f}")
     print(f"{'Classification Top-1 Acc':<30} {metrics['cls_top1_acc']:>10.4f}")

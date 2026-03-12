@@ -48,19 +48,30 @@ def compute_iou_bbox(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
 
 
 def compute_seg_iou(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """Compute mean IoU for binary segmentation masks.
+    """Compute mean IoU for binary segmentation (averaged over hand + background).
 
     Args:
         pred: Predicted mask logits of shape (N, 1, H, W).
         target: Target binary masks of shape (N, 1, H, W).
 
     Returns:
-        Mean IoU scalar tensor.
+        Mean IoU scalar tensor (average of hand IoU and background IoU).
     """
     pred_bin = (torch.sigmoid(pred) > 0.5).float()
-    intersection = (pred_bin * target).sum(dim=(1, 2, 3))
-    union = pred_bin.sum(dim=(1, 2, 3)) + target.sum(dim=(1, 2, 3)) - intersection + 1e-7
-    return (intersection / union).mean()
+
+    # Hand IoU
+    inter_hand = (pred_bin * target).sum(dim=(1, 2, 3))
+    union_hand = pred_bin.sum(dim=(1, 2, 3)) + target.sum(dim=(1, 2, 3)) - inter_hand + 1e-7
+    iou_hand = inter_hand / union_hand
+
+    # Background IoU
+    pred_bg = 1.0 - pred_bin
+    target_bg = 1.0 - target
+    inter_bg = (pred_bg * target_bg).sum(dim=(1, 2, 3))
+    union_bg = pred_bg.sum(dim=(1, 2, 3)) + target_bg.sum(dim=(1, 2, 3)) - inter_bg + 1e-7
+    iou_bg = inter_bg / union_bg
+
+    return ((iou_hand + iou_bg) / 2.0).mean()
 
 
 def compute_dice(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:

@@ -48,8 +48,28 @@ def compute_loss(
     Returns:
         (total_loss, loss_dict) where loss_dict contains individual losses.
     """
-    loss_bbox = nn.SmoothL1Loss()(outputs["bbox"], batch["bbox"])
-    loss_seg = nn.BCEWithLogitsLoss()(outputs["seg"], batch["mask"])
+    loss_bbox_l1 = nn.SmoothL1Loss()(outputs["bbox"], batch["bbox"])
+    # GIoU-style loss for better bbox learning
+    pred_b, gt_b = outputs["bbox"], batch["bbox"]
+    x1 = torch.max(pred_b[:, 0], gt_b[:, 0])
+    y1 = torch.max(pred_b[:, 1], gt_b[:, 1])
+    x2 = torch.min(pred_b[:, 2], gt_b[:, 2])
+    y2 = torch.min(pred_b[:, 3], gt_b[:, 3])
+    inter = torch.clamp(x2 - x1, min=0) * torch.clamp(y2 - y1, min=0)
+    area_pred = (pred_b[:, 2] - pred_b[:, 0]).clamp(min=0) * (pred_b[:, 3] - pred_b[:, 1]).clamp(min=0)
+    area_gt = (gt_b[:, 2] - gt_b[:, 0]).clamp(min=0) * (gt_b[:, 3] - gt_b[:, 1]).clamp(min=0)
+    union = area_pred + area_gt - inter + 1e-7
+    iou = inter / union
+    loss_bbox_iou = (1 - iou).mean()
+    loss_bbox = loss_bbox_l1 + loss_bbox_iou
+
+    # Combined BCE + Dice loss for segmentation
+    loss_seg_bce = nn.BCEWithLogitsLoss()(outputs["seg"], batch["mask"])
+    pred_sig = torch.sigmoid(outputs["seg"])
+    inter_seg = (pred_sig * batch["mask"]).sum(dim=(1, 2, 3))
+    denom_seg = pred_sig.sum(dim=(1, 2, 3)) + batch["mask"].sum(dim=(1, 2, 3)) + 1e-7
+    loss_seg_dice = (1 - 2.0 * inter_seg / denom_seg).mean()
+    loss_seg = loss_seg_bce + loss_seg_dice
     loss_cls = nn.CrossEntropyLoss()(outputs["cls"], batch["label"])
 
     total = w_bbox * loss_bbox + w_seg * loss_seg + w_cls * loss_cls
@@ -140,7 +160,7 @@ def main():
     parser.add_argument("--w_seg", type=float, default=1.0)
     parser.add_argument("--w_cls", type=float, default=1.0)
     parser.add_argument("--data_root", default="~/Documents/UCL/COMP0248/dataset_all/extracted/")
-    parser.add_argument("--save_dir", default="~/Documents/UCL/COMP0248/project/checkpoints/")
+    parser.add_argument("--save_dir", default="../checkpoints/")
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--val_ratio", type=float, default=0.2)
     args = parser.parse_args()
