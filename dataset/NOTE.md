@@ -1,3 +1,5 @@
 # Dataset Note
 
 The dataset folder included here uses data from another student (23047126_Liu) as a placeholder. My own recorded data was not available at the time of submission. This has been discussed with and approved by the course instructor.
+
+Only annotation masks are included here to keep the repository size manageable. The full RGB and depth frames are available in the shared COMP0248 dataset distributed via Moodle.
